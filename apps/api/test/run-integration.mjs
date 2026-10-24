@@ -12,7 +12,7 @@ const env = { ...process.env, DATABASE_URL: url.href, CALLFLOW_TEST_SCHEMA: sche
 console.log(`Pruebas PostgreSQL en esquema aislado: ${schema}`);
 for (const args of [
   [fileURLToPath(import.meta.resolve('prisma/build/index.js')), 'migrate', 'deploy'],
-  ['-r', 'ts-node/register', '--test', 'test/calls.integration.test.ts'],
+  ['-r', 'ts-node/register', '--test', '--test-concurrency=1', 'test/calls.integration.test.ts', 'test/webhook.integration.test.ts'],
 ]) {
   const result = spawnSync(process.execPath, args, { env, stdio: 'inherit' });
   if (result.error) throw result.error;

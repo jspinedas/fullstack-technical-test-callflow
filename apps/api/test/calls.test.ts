@@ -8,6 +8,7 @@ import { RegisterCallUseCase } from '../src/calls/application/register-call.use-
 import { ListCallsUseCase } from '../src/calls/application/list-calls.use-case';
 import { MarkCallAsSpamUseCase } from '../src/calls/application/mark-call-as-spam.use-case';
 import { loadDatabaseUrl } from '../src/config';
+import { InvalidCallError } from '../src/calls/application/invalid-call.error';
 
 const input: RegisterCallInput = {
   callId: 'call-unit', phoneNumber: '+57 (300) 123-4567', agent: 'Agente 01', duration: 120,
@@ -69,11 +70,18 @@ test('protege invariantes y límites de persistencia antes de llamar al reposito
   ];
   const repository = new MemoryRepository();
   const useCase = new RegisterCallUseCase(repository);
-  for (const change of invalid) assert.throws(() => useCase.execute({ ...input, ...change }));
+  for (const change of invalid) assert.throws(() => useCase.execute({ ...input, ...change }), InvalidCallError);
   assert.equal(repository.calls.length, 0);
   assert.equal(prepareCall({ ...input, duration: 0 }).duration, 0);
   assert.equal(prepareCall({ ...input, recordingUrl: null }).recordingUrl, null);
   assert.equal(prepareCall({ ...input, recordingUrl: 'https://example.com/audio.mp3' }).recordingUrl, 'https://example.com/audio.mp3');
+});
+
+test('registro no clasifica fallos de persistencia como errores de validación', async () => {
+  const repository = new MemoryRepository();
+  const failure = new Error('Fallo de persistencia');
+  repository.register = async () => { throw failure; };
+  await assert.rejects(new RegisterCallUseCase(repository).execute(input), (error: unknown) => error === failure);
 });
 
 test('registro distingue inserción de duplicado sin sobrescribir datos', async () => {

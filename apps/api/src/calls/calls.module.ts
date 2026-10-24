@@ -6,8 +6,10 @@ import { ListCallsUseCase } from './application/list-calls.use-case';
 import { MarkCallAsSpamUseCase } from './application/mark-call-as-spam.use-case';
 import { PrismaCallRepository } from './infrastructure/prisma-call.repository';
 import { PrismaService } from './infrastructure/prisma.service';
+import { CallWebhookController } from './presentation/call-webhook.controller';
 
 @Module({
+  controllers: [CallWebhookController],
   providers: [
     { provide: PrismaService, useFactory: () => new PrismaService(loadDatabaseUrl(process.env.DATABASE_URL)) },
     { provide: CALL_REPOSITORY, useFactory: (prisma: PrismaService) => new PrismaCallRepository(prisma), inject: [PrismaService] },

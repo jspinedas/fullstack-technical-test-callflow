@@ -142,7 +142,7 @@ test('PostgreSQL aplica UNIQUE y CHECK incluso sin pasar por el dominio', async 
     VALUES (${randomUUID()}, ${'+12025550123'}, ${'Agente'}, NULL)`);
 });
 
-test('Nest resuelve los casos de uso con PostgreSQL real y no expone endpoints de negocio', async () => {
+test('Nest resuelve los casos de uso con PostgreSQL real y no expone el listado de llamadas', async () => {
   const app = await createApp(loadConfig({}));
   try {
     await app.listen(0, '127.0.0.1');
