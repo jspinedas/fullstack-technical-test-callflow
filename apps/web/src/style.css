@@ -1,0 +1,7 @@
+:root { font-family: system-ui, sans-serif; color: #16283f; background: #f1f5f9; }
+body { margin: 0; }
+main { max-width: 42rem; margin: 12vh auto; padding: 2rem; background: white; border-radius: 1rem; }
+h1 { margin-top: 0; }
+[data-state="connected"] { color: #116039; }
+[data-state="error"] { color: #ad2525; }
+@media (max-width: 48rem) { main { margin: 2rem 1rem; } }
