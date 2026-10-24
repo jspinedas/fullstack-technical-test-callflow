@@ -86,7 +86,26 @@ corepack pnpm test
 corepack pnpm build
 ```
 
-`apps/api/src/calls` separa dominio, aplicación, infraestructura y presentación; sus casos de uso se resuelven mediante providers NestJS. El controlador del webhook reutiliza el registro existente. `libphonenumber-js` normaliza y valida números con prefijo `+` explícito, sin país predeterminado; entradas nacionales ambiguas y extensiones se rechazan. `packages/contracts` expone payload y respuesta del webhook sin DTOs NestJS ni modelos Prisma. Swagger se incorporará en una fase posterior.
+`apps/api/src/calls` separa dominio, aplicación, infraestructura y presentación; sus casos de uso se resuelven mediante providers NestJS. El controlador del webhook reutiliza el registro existente. `libphonenumber-js` normaliza y valida números con prefijo `+` explícito, sin país predeterminado; entradas nacionales ambiguas y extensiones se rechazan. `packages/contracts` expone payload y respuesta del webhook sin DTOs NestJS ni modelos Prisma. Swagger/OpenAPI es la documentación principal de los endpoints.
+
+## Swagger / OpenAPI
+
+Con la API iniciada, abre http://localhost:3000/api/docs. En Docker también está disponible mediante Nginx en http://localhost:5173/api/docs; el proxy de Vite permite la misma ruta durante desarrollo local. Los recursos de Swagger UI se sirven desde la API y no requieren un CDN.
+
+El documento OpenAPI JSON está en http://localhost:3000/api/docs-json o http://localhost:5173/api/docs-json. Las rutas de la especificación ya incluyen `/api` y utilizan el mismo origen, de modo que Try it out funciona tanto con acceso directo como mediante proxy. Los ejemplos emplean datos ficticios; Try it out ejecuta operaciones reales y puede crear llamadas o marcarlas como spam.
+
+Se documentan los cinco endpoints, DTOs, parámetros, límites, respuestas y errores actuales. El webhook admite `recordingUrl` omitido pero no `null`; el listado siempre incluye ese campo y puede devolver `null`. La documentación no añade autenticación: siguen pendientes la firma y el contrato del proveedor del webhook. No introduzcas credenciales reales en ejemplos ni publiques esta API como si estuviera autenticada.
+
+Swagger UI no es un cliente SSE completo: la operación puede permanecer abierta sin mostrar cada frame. La descripción de `GET /api/calls/events` incluye los cuatro tipos de eventos y un ejemplo EventSource. Para observarlos desde la consola del navegador en el mismo origen:
+
+```javascript
+const events = new EventSource('/api/calls/events');
+for (const type of ['call.created', 'call.updated', 'stream.status', 'heartbeat']) {
+  events.addEventListener(type, event => console.log(type, JSON.parse(event.data)));
+}
+```
+
+Ejecuta `events.close()` para finalizar. EventSource reconecta automáticamente, pero no hay replay; recupera el estado mediante `GET /api/calls` al conectar o reconectar. Las pruebas de `corepack pnpm test` verifican UI, recursos estáticos, JSON OpenAPI, rutas, parámetros, esquemas, referencias y ejemplos de respuesta. Las pruebas de navegador también comprueban Swagger UI sin ejecutar escrituras desde la documentación.
 
 ## Webhook de llamadas
 
@@ -156,6 +175,6 @@ corepack pnpm test:e2e
 
 Las pruebas Playwright usan `http://127.0.0.1:5173`; configura `E2E_BASE_URL` para otra dirección. En Windows puedes usar Edge instalado con `$env:PLAYWRIGHT_CHANNEL='msedge'` y ejecutar `corepack pnpm test:e2e`, sin descargar Chromium. Verifican webhook → Redis → SSE → React, actualización de spam entre sesiones, reconexión y diseño móvil. Conservan las llamadas sintéticas creadas, y guardan capturas en `test-results/` (excluido de Git).
 
-Las pruebas de integración incluyen dos instancias NestJS, SSE HTTP y Redis real, cambios concurrentes de spam y fallos/reconexión TCP aislados sin detener los servicios existentes. La interfaz no incluye filtros avanzados, edición, eliminación ni estadísticas. Swagger/OpenAPI permanece fuera de esta fase.
+Las pruebas de integración incluyen dos instancias NestJS, SSE HTTP y Redis real, cambios concurrentes de spam y fallos/reconexión TCP aislados sin detener los servicios existentes. La interfaz no incluye filtros avanzados, edición, eliminación ni estadísticas.
 
 Si Docker no conecta con su motor, inicia Docker Desktop con contenedores Linux. Si un puerto está ocupado, ajusta `.env`. Ante un error web, verifica `/api/health` y usa Actualizar para recuperar el historial. Evita `docker compose down -v` para conservar datos.
