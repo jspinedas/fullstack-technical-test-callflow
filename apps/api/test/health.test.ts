@@ -5,10 +5,13 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/calls/infrastructure/prisma.service';
 import { configureApp } from '../src/app';
 import { loadConfig } from '../src/config';
+import { CALL_EVENTS } from '../src/calls/application/call-events';
+import { MemoryEventBus } from './event-bus.stub';
 
 test('GET /api/health devuelve el estado HTTP y aplica CORS', async () => {
   const module = await Test.createTestingModule({ imports: [AppModule] })
-    .overrideProvider(PrismaService).useValue({}).compile();
+    .overrideProvider(PrismaService).useValue({})
+    .overrideProvider(CALL_EVENTS).useValue(new MemoryEventBus()).compile();
   const app = module.createNestApplication();
   configureApp(app, loadConfig({}));
   try {

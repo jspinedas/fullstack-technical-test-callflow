@@ -1,6 +1,6 @@
 # Callflow
 
-Flujo de llamadas entrantes con NestJS, React y contratos TypeScript compartidos. Incluye registro idempotente por webhook y persistencia mediante Prisma y PostgreSQL. La pantalla inicial consulta `GET /api/health`, que verifica el proceso HTTP; no comprueba PostgreSQL ni Redis. No hay endpoints de listado o spam, SSE ni Pub/Sub.
+Gestión de llamadas entrantes con NestJS, React y contratos TypeScript compartidos. El webhook persiste en PostgreSQL y notifica mediante Redis Pub/Sub y SSE. La interfaz responsive permite consultar el historial paginado, ver recurrencia y grabaciones, y marcar una llamada como spam. `GET /api/health` verifica únicamente el proceso HTTP.
 
 ## Requisitos e instalación
 
@@ -55,10 +55,13 @@ También puedes aplicar migraciones explícitamente con `docker compose run --rm
 | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | Configuración de PostgreSQL; contraseña obligatoria                       |
 | `POSTGRES_PORT`                                         | Puerto publicado PostgreSQL: `5432`                                       |
 | `REDIS_PORT`                                            | Puerto publicado Redis: `6379`                                            |
+| `REDIS_URL` | Conexión local Redis: `redis://localhost:6379`; ajustar si cambia el puerto publicado |
+| `REDIS_CHANNEL` | Canal compartido entre instancias API: `callflow.calls` |
+| `TEST_REDIS_URL` | Redis real para integración; las pruebas utilizan un canal aislado por ejecución |
 | `DATABASE_URL` | Conexión Prisma local: `postgresql://callflow:local_demo_change_me@localhost:5432/callflow?schema=public` |
 | `TEST_DATABASE_URL` | Conexión para integración PostgreSQL; el runner crea un esquema aislado por ejecución |
 
-Solo las variables `VITE_*` son públicas. Cambiar `WEB_PORT` requiere ajustar `CORS_ORIGIN` para consultar directamente la API. Los puertos se publican en `127.0.0.1`. Dentro de Docker, PostgreSQL se encuentra en `postgres:5432` y Redis en `redis:6379`; todavía no hay integración Redis. Compose establece la conexión PostgreSQL interna independientemente del puerto publicado. Cambiar credenciales no reconfigura un volumen PostgreSQL ya inicializado.
+Solo las variables `VITE_*` son públicas. Cambiar `WEB_PORT` requiere ajustar `CORS_ORIGIN` para consultar directamente la API. Los puertos se publican en `127.0.0.1`. Dentro de Docker, PostgreSQL se encuentra en `postgres:5432` y Redis en `redis:6379`; Compose fija ambas URLs internas independientemente de los puertos publicados. Cambiar credenciales no reconfigura un volumen PostgreSQL ya inicializado. Añade las variables nuevas a tu `.env` existente sin reemplazarlo.
 
 Si tu `.env` ya existe, añade las dos URLs sin reemplazar el archivo. Con `POSTGRES_PORT=5433`, ambas URLs locales deben usar `localhost:5433`, mientras Docker mantiene `postgres:5432`. Codifica los caracteres reservados en las credenciales de las URLs locales. La URL interna de Compose interpola las credenciales de demostración; para credenciales con caracteres reservados, adapta esa URL con codificación porcentual antes de iniciar el stack.
 
@@ -70,7 +73,7 @@ corepack pnpm db:migrate
 corepack pnpm test:integration
 ```
 
-`db:migrate` usa migraciones versionadas con `prisma migrate deploy`; no usa `db push` ni reinicializa datos. Las pruebas de integración exigen `TEST_DATABASE_URL`, crean un esquema `callflow_test_<uuid>`, aplican la migración real y ejecutan las pruebas de restricciones, duplicados concurrentes, recurrencia y spam. Se conserva ese esquema para inspección y no se eliminan datos ni volúmenes automáticamente. Usa una base de desarrollo o pruebas cuyo usuario pueda crear esquemas. `pnpm test` ejecuta las pruebas unitarias, HTTP y React sin requerir PostgreSQL.
+`db:migrate` usa migraciones versionadas con `prisma migrate deploy`; no usa `db push` ni reinicializa datos. Las pruebas de integración exigen PostgreSQL y Redis reales, crean un esquema `callflow_test_<uuid>` y un canal Redis aislado, y aplican la migración existente. Se conserva ese esquema para inspección y no se eliminan datos ni volúmenes automáticamente. Usa una base de desarrollo o pruebas cuyo usuario pueda crear esquemas. `pnpm test` ejecuta las pruebas unitarias, HTTP y React sin requerir servicios externos.
 
 El registro usa un bloqueo transaccional PostgreSQL por número internacional normalizado y una restricción única para `call_id`. La recurrencia se calcula con `EXISTS` sobre llamadas anteriores según `registration_order`, sin guardar un booleano ni hacer una consulta por cada resultado. El orden es consistente por número; una secuencia no garantiza el orden global de commit entre números diferentes. El listado usa páginas de 1 a 100 registros y orden descendente; las páginas pueden desplazarse si hay nuevas inserciones entre peticiones.
 
@@ -112,7 +115,7 @@ Invoke-WebRequest -Uri 'http://localhost:3000/api/webhooks/calls' -Method Post -
 Invoke-WebRequest -Uri 'http://localhost:3000/api/webhooks/calls' -Method Post -ContentType 'application/json' -Body $body | Select-Object StatusCode, Content
 ```
 
-La primera solicitud devuelve **201** con `{"callId":"…","inserted":true,"isRecurrent":false}`; el reintento devuelve **200** con `inserted:false`. `isRecurrent` será `true` si existe una llamada anterior del mismo número: corresponde al registro original y permanece estable aunque el reintento envíe otro número. Un duplicado válido conserva todos los datos originales, incluso si el payload es diferente. La unicidad y concurrencia siguen garantizadas en PostgreSQL. No se publican eventos.
+La primera solicitud devuelve **201** con `{"callId":"…","inserted":true,"isRecurrent":false}`; el reintento devuelve **200** con `inserted:false`. `isRecurrent` será `true` si existe una llamada anterior del mismo número: corresponde al registro original y permanece estable aunque el reintento envíe otro número. Un duplicado válido conserva todos los datos originales, incluso si el payload es diferente. La unicidad y concurrencia siguen garantizadas en PostgreSQL. Solo una inserción nueva confirmada publica `call.created`.
 
 | Estado | Motivo |
 | --- | --- |
@@ -126,4 +129,33 @@ No se registran payloads completos y las respuestas de error no incluyen SQL, cr
 
 `corepack pnpm test` incluye validación HTTP y traducción de errores con dobles de aplicación. `corepack pnpm test:integration` mantiene las pruebas previas y añade E2E HTTP contra PostgreSQL real: respuestas 201/200, payloads distintos, números distintos, concurrencia, recurrencia y ausencia de escritura ante errores. La prueba de indisponibilidad utiliza un cliente Prisma aislado conectado a un puerto que rechaza conexiones de base de datos; no detiene PostgreSQL ni afecta al stack. Los esquemas de pruebas existentes se conservan.
 
-Si Docker no conecta con su motor, inicia Docker Desktop con contenedores Linux. Si un puerto está ocupado, ajusta `.env`. Ante un error de conexión web, verifica `/api/health`; la consulta tiene un límite de cinco segundos. Evita `docker compose down -v` para conservar datos.
+## REST, SSE e interfaz
+
+| Endpoint | Comportamiento |
+| --- | --- |
+| `GET /api/calls?page=1&pageSize=20` | Historial descendente por orden de registro, con `items`, `page`, `pageSize` y `total`; tamaño máximo 100 |
+| `PATCH /api/calls/:id/spam` | UUID interno; devuelve `{id,isSpam:true,changed}`. Repetir devuelve `changed:false`; inexistente: 404, UUID inválido: 400 |
+| `GET /api/calls/events` | SSE con `call.created`, `call.updated`, `stream.status` y heartbeat cada 15 segundos |
+
+Las llamadas públicas incluyen identificadores, teléfono normalizado, agente, duración, URL nullable, `isSpam`, `isRecurrent` y `createdAt` ISO 8601. No exponen tipos Prisma ni el BIGINT interno. `call.updated` solo se publica cuando el marcado cambia efectivamente el estado; no afecta otras llamadas del mismo número.
+
+La API utiliza una conexión Redis para publicar y otra para suscribirse por instancia, compartidas por todos los clientes SSE. Las notificaciones contienen únicamente tipo, UUID y `callId`. SSE agrupa ráfagas, mantiene un solo aviso pendiente por cliente y desconecta clientes con buffers de escritura excesivos. Nginx desactiva buffering y caché para `/api`, con timeout de lectura de una hora; los heartbeats mantienen activa la conexión.
+
+React consulta REST al montar, al establecer o recuperar SSE y al recibir notificaciones; agrupa avisos cercanos y reconcilia por identificador. El estado `En vivo` requiere conexión con el canal Redis. Durante una desconexión utiliza recuperación REST cada 15 segundos, además del botón Actualizar; no hace consultas periódicas mientras el tiempo real funciona. EventSource reconecta automáticamente. La interfaz ofrece estados de carga, vacío y error, paginación y confirmación de spam, con diseño de tabla en escritorio y tarjetas en móvil.
+
+PostgreSQL es la fuente de verdad. Redis Pub/Sub no es durable ni atómico con PostgreSQL: una caída o la terminación del proceso entre commit y publicación puede perder un aviso. No hay Outbox, replay ni garantía de entrega exactamente una vez. La publicación tiene timeout de un segundo, no acumula comandos fuera de línea y no revierte la llamada si Redis falla. Las conexiones se recuperan en segundo plano y la disponibilidad restaurada provoca reconciliación REST.
+
+## Validación en navegador
+
+Con el stack iniciado en una base de desarrollo:
+
+```sh
+corepack pnpm exec playwright install chromium
+corepack pnpm test:e2e
+```
+
+Las pruebas Playwright usan `http://127.0.0.1:5173`; configura `E2E_BASE_URL` para otra dirección. En Windows puedes usar Edge instalado con `$env:PLAYWRIGHT_CHANNEL='msedge'` y ejecutar `corepack pnpm test:e2e`, sin descargar Chromium. Verifican webhook → Redis → SSE → React, actualización de spam entre sesiones, reconexión y diseño móvil. Conservan las llamadas sintéticas creadas, y guardan capturas en `test-results/` (excluido de Git).
+
+Las pruebas de integración incluyen dos instancias NestJS, SSE HTTP y Redis real, cambios concurrentes de spam y fallos/reconexión TCP aislados sin detener los servicios existentes. La interfaz no incluye filtros avanzados, edición, eliminación ni estadísticas. Swagger/OpenAPI permanece fuera de esta fase.
+
+Si Docker no conecta con su motor, inicia Docker Desktop con contenedores Linux. Si un puerto está ocupado, ajusta `.env`. Ante un error web, verifica `/api/health` y usa Actualizar para recuperar el historial. Evita `docker compose down -v` para conservar datos.
