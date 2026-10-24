@@ -1,0 +1,27 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { createApp } from '../src/app';
+import { loadConfig } from '../src/config';
+
+test('GET /api/health devuelve el estado HTTP y aplica CORS', async () => {
+  const app = await createApp(loadConfig({}));
+  try {
+    await app.listen(0, '127.0.0.1');
+    const response = await fetch(`${await app.getUrl()}/api/health`, {
+      headers: { Origin: 'http://localhost:5173' },
+    });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('access-control-allow-origin'), 'http://localhost:5173');
+    assert.deepEqual(await response.json(), { status: 'ok', service: 'callflow-api' });
+  } finally {
+    await app.close();
+  }
+});
+
+test('rechaza configuración de arranque inválida', () => {
+  for (const API_PORT of ['0', '65536', 'abc', '1.5']) {
+    assert.throws(() => loadConfig({ API_PORT }));
+  }
+  assert.throws(() => loadConfig({ CORS_ORIGIN: 'https://example.com/path' }));
+  assert.throws(() => loadConfig({ CORS_ORIGIN: 'ftp://example.com' }));
+});

@@ -1,0 +1,23 @@
+{
+  "name": "callflow",
+  "private": true,
+  "packageManager": "pnpm@10.17.1",
+  "engines": { "node": ">=20.19.0" },
+  "scripts": {
+    "dev": "pnpm --filter @callflow/contracts build && pnpm --parallel --filter @callflow/api --filter @callflow/web dev",
+    "lint": "eslint .",
+    "typecheck": "pnpm --filter @callflow/contracts build && pnpm -r typecheck",
+    "test": "pnpm --filter @callflow/contracts build && pnpm -r --if-present test",
+    "build": "pnpm -r build",
+    "infra:up": "docker compose up -d postgres redis",
+    "infra:stop": "docker compose stop postgres redis"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.35.0",
+    "@types/node": "22.18.6",
+    "eslint": "9.35.0",
+    "globals": "16.4.0",
+    "typescript": "5.9.2",
+    "typescript-eslint": "8.44.1"
+  }
+}
