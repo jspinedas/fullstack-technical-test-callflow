@@ -1,6 +1,6 @@
 # Callflow
 
-Base técnica de un flujo de llamadas entrantes con NestJS, React y contratos TypeScript compartidos. Esta fase incluye únicamente `GET /api/health` y una pantalla de conexión. La salud verifica el proceso HTTP; no comprueba PostgreSQL ni Redis.
+Flujo de llamadas entrantes con NestJS, React y contratos TypeScript compartidos. Incluye dominio y persistencia interna de llamadas mediante Prisma y PostgreSQL. El único endpoint sigue siendo `GET /api/health`, acompañado de una pantalla de conexión. La salud verifica el proceso HTTP; no comprueba PostgreSQL ni Redis. No hay endpoints de llamadas, SSE ni Pub/Sub.
 
 ## Requisitos e instalación
 
@@ -8,6 +8,7 @@ Node.js 20.19+ o 22.12+, Corepack y Docker con Compose. Las imágenes usan Node 
 
 ```sh
 corepack pnpm install
+corepack pnpm prisma:generate
 ```
 
 Copia `.env.example` a `.env` en la raíz. Los valores son de demostración local; reemplaza la contraseña cuando corresponda. No versiones `.env`.
@@ -16,6 +17,7 @@ Copia `.env.example` a `.env` en la raíz. Los valores son de demostración loca
 
 ```sh
 corepack pnpm infra:up
+corepack pnpm db:migrate
 corepack pnpm dev
 ```
 
@@ -38,7 +40,9 @@ docker compose ps
 docker compose logs --tail 50
 ```
 
-Abre http://localhost:5173 y verifica http://localhost:5173/api/health. Nginx sirve React y reenvía `/api` a `api:3000` dentro de Docker. El navegador utiliza el mismo origen. Los builds usan el lockfile y no requieren montajes de código. `docker compose stop` detiene los servicios sin eliminar el volumen PostgreSQL.
+Abre http://localhost:5173 y verifica http://localhost:5173/api/health. Nginx sirve React y reenvía `/api` a `api:3000` dentro de Docker. El navegador utiliza el mismo origen. Los builds generan Prisma Client y usan el lockfile sin montajes de código. La API aplica las migraciones pendientes antes de arrancar; si la migración falla, no inicia el servidor. `docker compose stop` detiene los servicios sin eliminar el volumen PostgreSQL.
+
+También puedes aplicar migraciones explícitamente con `docker compose run --rm --no-deps api node apps/api/node_modules/prisma/build/index.js migrate deploy --schema apps/api/prisma/schema.prisma` cuando PostgreSQL ya esté disponible y la imagen API construida.
 
 ## Variables
 
@@ -51,8 +55,24 @@ Abre http://localhost:5173 y verifica http://localhost:5173/api/health. Nginx si
 | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | Configuración de PostgreSQL; contraseña obligatoria                       |
 | `POSTGRES_PORT`                                         | Puerto publicado PostgreSQL: `5432`                                       |
 | `REDIS_PORT`                                            | Puerto publicado Redis: `6379`                                            |
+| `DATABASE_URL` | Conexión Prisma local: `postgresql://callflow:local_demo_change_me@localhost:5432/callflow?schema=public` |
+| `TEST_DATABASE_URL` | Conexión para integración PostgreSQL; el runner crea un esquema aislado por ejecución |
 
-Solo las variables `VITE_*` son públicas. Cambiar `WEB_PORT` requiere ajustar `CORS_ORIGIN` para consultar directamente la API. Los puertos se publican en `127.0.0.1`. Dentro de Docker, la infraestructura se encuentra en `postgres:5432` y `redis:6379`; esta fase no incorpora adaptadores que la consuman. Cambiar credenciales no reconfigura un volumen PostgreSQL ya inicializado.
+Solo las variables `VITE_*` son públicas. Cambiar `WEB_PORT` requiere ajustar `CORS_ORIGIN` para consultar directamente la API. Los puertos se publican en `127.0.0.1`. Dentro de Docker, PostgreSQL se encuentra en `postgres:5432` y Redis en `redis:6379`; todavía no hay integración Redis. Compose establece la conexión PostgreSQL interna independientemente del puerto publicado. Cambiar credenciales no reconfigura un volumen PostgreSQL ya inicializado.
+
+Si tu `.env` ya existe, añade las dos URLs sin reemplazar el archivo. Con `POSTGRES_PORT=5433`, ambas URLs locales deben usar `localhost:5433`, mientras Docker mantiene `postgres:5432`. Codifica los caracteres reservados en las credenciales de las URLs locales. La URL interna de Compose interpola las credenciales de demostración; para credenciales con caracteres reservados, adapta esa URL con codificación porcentual antes de iniciar el stack.
+
+## Persistencia y pruebas PostgreSQL
+
+```sh
+corepack pnpm prisma:generate
+corepack pnpm db:migrate
+corepack pnpm test:integration
+```
+
+`db:migrate` usa migraciones versionadas con `prisma migrate deploy`; no usa `db push` ni reinicializa datos. Las pruebas de integración exigen `TEST_DATABASE_URL`, crean un esquema `callflow_test_<uuid>`, aplican la migración real y ejecutan las pruebas de restricciones, duplicados concurrentes, recurrencia y spam. Se conserva ese esquema para inspección y no se eliminan datos ni volúmenes automáticamente. Usa una base de desarrollo o pruebas cuyo usuario pueda crear esquemas. `pnpm test` ejecuta las pruebas unitarias, HTTP y React sin requerir PostgreSQL.
+
+El registro usa un bloqueo transaccional PostgreSQL por número internacional normalizado y una restricción única para `call_id`. La recurrencia se calcula con `EXISTS` sobre llamadas anteriores según `registration_order`, sin guardar un booleano ni hacer una consulta por cada resultado. El orden es consistente por número; una secuencia no garantiza el orden global de commit entre números diferentes. El listado usa páginas de 1 a 100 registros y orden descendente; las páginas pueden desplazarse si hay nuevas inserciones entre peticiones.
 
 ## Calidad y estructura
 
@@ -63,6 +83,6 @@ corepack pnpm test
 corepack pnpm build
 ```
 
-Las pruebas verifican el endpoint HTTP real, validaciones de arranque y estados de conexión de React. `apps/api` contiene NestJS; `apps/web` organiza la UI por `features`; `packages/contracts` exporta tipos públicos sin dependencias de frameworks. Los futuros módulos de negocio separarán dominio, aplicación, infraestructura y presentación. Swagger se incorporará con los endpoints funcionales en fases posteriores.
+`apps/api/src/calls` separa dominio, aplicación e infraestructura; sus casos de uso internos se resuelven mediante providers NestJS. No hay controladores de negocio todavía. `libphonenumber-js` normaliza y valida números con prefijo `+` explícito, sin país predeterminado; entradas nacionales ambiguas y extensiones se rechazan. `packages/contracts` no expone modelos Prisma. Swagger se incorporará con los endpoints funcionales en fases posteriores.
 
 Si Docker no conecta con su motor, inicia Docker Desktop con contenedores Linux. Si un puerto está ocupado, ajusta `.env`. Ante un error de conexión web, verifica `/api/health`; la consulta tiene un límite de cinco segundos. Evita `docker compose down -v` para conservar datos.

@@ -1,10 +1,16 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createApp } from '../src/app';
+import { Test } from '@nestjs/testing';
+import { AppModule } from '../src/app.module';
+import { PrismaService } from '../src/calls/infrastructure/prisma.service';
+import { configureApp } from '../src/app';
 import { loadConfig } from '../src/config';
 
 test('GET /api/health devuelve el estado HTTP y aplica CORS', async () => {
-  const app = await createApp(loadConfig({}));
+  const module = await Test.createTestingModule({ imports: [AppModule] })
+    .overrideProvider(PrismaService).useValue({}).compile();
+  const app = module.createNestApplication();
+  configureApp(app, loadConfig({}));
   try {
     await app.listen(0, '127.0.0.1');
     const response = await fetch(`${await app.getUrl()}/api/health`, {

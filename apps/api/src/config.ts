@@ -10,3 +10,15 @@ export function loadConfig(env: NodeJS.ProcessEnv) {
   }
   return { port, corsOrigin };
 }
+
+export function loadDatabaseUrl(value: string | undefined): string {
+  try {
+    const url = new URL(value ?? '');
+    if (!['postgres:', 'postgresql:'].includes(url.protocol) || !url.hostname || url.pathname.length < 2) {
+      throw new Error('URL inválida');
+    }
+    return url.href;
+  } catch {
+    throw new Error('DATABASE_URL debe ser una URL PostgreSQL con host y base de datos');
+  }
+}

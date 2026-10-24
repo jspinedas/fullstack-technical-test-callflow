@@ -9,6 +9,9 @@
     "typecheck": "pnpm --filter @callflow/contracts build && pnpm -r typecheck",
     "test": "pnpm --filter @callflow/contracts build && pnpm -r --if-present test",
     "build": "pnpm -r build",
+    "prisma:generate": "pnpm --filter @callflow/api prisma:generate",
+    "db:migrate": "pnpm --filter @callflow/api db:migrate",
+    "test:integration": "pnpm --filter @callflow/api test:integration",
     "infra:up": "docker compose up -d postgres redis",
     "infra:stop": "docker compose stop postgres redis"
   },

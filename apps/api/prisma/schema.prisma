@@ -1,0 +1,23 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Call {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  callId            String   @unique(map: "calls_call_id_key") @map("call_id") @db.VarChar(100)
+  phoneNumber       String   @map("phone_number") @db.VarChar(30)
+  agent             String   @db.VarChar(150)
+  duration          Int
+  recordingUrl      String?  @map("recording_url") @db.Text
+  isSpam            Boolean  @default(false) @map("is_spam")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  registrationOrder BigInt   @unique(map: "calls_registration_order_key") @default(autoincrement()) @map("registration_order")
+
+  @@index([phoneNumber, registrationOrder], map: "calls_phone_registration_idx")
+  @@map("calls")
+}
