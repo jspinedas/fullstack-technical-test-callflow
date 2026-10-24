@@ -48,7 +48,7 @@ export class PrismaCallRepository implements CallRepository {
         LIMIT ${page.pageSize} OFFSET ${(page.page - 1) * page.pageSize}`;
       const total = await tx.call.count();
       return { ...page, items: rows.map(toResult), total };
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, maxWait: 10000, timeout: 15000 });
   }
 
   async findById(id: string): Promise<CallWithRecurrence | null> {
@@ -59,10 +59,10 @@ export class PrismaCallRepository implements CallRepository {
 
   async markAsSpam(id: string): Promise<MarkSpamResult> {
     return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.call.updateMany({ where: { id }, data: { isSpam: true } });
-      if (updated.count === 0) return { found: false };
-      const row = await tx.call.findUniqueOrThrow({ where: { id } });
-      return { found: true, call: toCall(row) };
-    });
+      const updated = await tx.call.updateMany({ where: { id, isSpam: false }, data: { isSpam: true } });
+      const row = await tx.call.findUnique({ where: { id } });
+      if (!row) return { found: false };
+      return { found: true, call: toCall(row), changed: updated.count === 1 };
+    }, { maxWait: 10000, timeout: 15000 });
   }
 }

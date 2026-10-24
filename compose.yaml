@@ -34,6 +34,8 @@ services:
       API_PORT: '3000'
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
       DATABASE_URL: postgresql://${POSTGRES_USER:-callflow}:${POSTGRES_PASSWORD:?Configura POSTGRES_PASSWORD en .env}@postgres:5432/${POSTGRES_DB:-callflow}?schema=public
+      REDIS_URL: redis://redis:6379
+      REDIS_CHANNEL: ${REDIS_CHANNEL:-callflow.calls}
     ports:
       - '127.0.0.1:${API_PORT:-3000}:3000'
     depends_on:

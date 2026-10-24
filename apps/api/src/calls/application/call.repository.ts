@@ -21,7 +21,7 @@ export interface CallPage extends PageRequest {
   readonly total: number;
 }
 
-export type MarkSpamResult = { readonly found: false } | { readonly found: true; readonly call: Call };
+export type MarkSpamResult = { readonly found: false } | { readonly found: true; readonly call: Call; readonly changed: boolean };
 
 export interface CallRepository {
   register(call: NewCall): Promise<RegisterCallResult>;

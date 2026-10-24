@@ -125,7 +125,7 @@ test('spam modifica solo una llamada y conserva datos al repetirse', async () =>
   assert.equal(marked.found, true);
   if (!marked.found) throw new Error('No se encontró la llamada');
   assert.deepEqual(marked.call, { ...first.call, isSpam: true });
-  assert.deepEqual(await markSpam.execute(first.call.id), marked);
+  assert.deepEqual(await markSpam.execute(first.call.id), { ...marked, changed: false });
   assert.equal((await repository.findById(second.call.id))?.call.isSpam, false);
   assert.deepEqual(await markSpam.execute(randomUUID()), { found: false });
 });
@@ -142,7 +142,7 @@ test('PostgreSQL aplica UNIQUE y CHECK incluso sin pasar por el dominio', async 
     VALUES (${randomUUID()}, ${'+12025550123'}, ${'Agente'}, NULL)`);
 });
 
-test('Nest resuelve los casos de uso con PostgreSQL real y no expone el listado de llamadas', async () => {
+test('Nest resuelve los casos de uso con PostgreSQL real y expone el listado de llamadas', async () => {
   const app = await createApp(loadConfig({}));
   try {
     await app.listen(0, '127.0.0.1');
@@ -153,7 +153,7 @@ test('Nest resuelve los casos de uso con PostgreSQL real y no expone el listado 
     assert.ok((await app.get(ListCallsUseCase).execute()).total > 0);
     const base = await app.getUrl();
     assert.equal((await fetch(`${base}/api/health`)).status, 200);
-    assert.equal((await fetch(`${base}/api/calls`)).status, 404);
+    assert.equal((await fetch(`${base}/api/calls`)).status, 200);
   } finally {
     await app.close();
   }

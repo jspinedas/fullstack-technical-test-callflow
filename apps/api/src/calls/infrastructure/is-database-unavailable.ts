@@ -5,6 +5,7 @@ export function isDatabaseUnavailable(error: unknown): boolean {
     return ['P1001', 'P1002', 'P1017'].includes(error.errorCode ?? '');
   }
   if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    if (error.code === 'P2028' && error.meta?.error === 'Unable to start a transaction in the given time.') return true;
     if (['P1001', 'P1002', 'P1008', 'P1017', 'P2024'].includes(error.code)) return true;
     const sqlState = error.meta?.code;
     return error.code === 'P2010' && typeof sqlState === 'string' &&

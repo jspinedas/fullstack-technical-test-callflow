@@ -45,7 +45,7 @@ class MemoryRepository implements CallRepository {
     if (!existing) return { found: false };
     const call = { ...existing, isSpam: true };
     this.calls[index] = call;
-    return { found: true, call };
+    return { found: true, call, changed: !existing.isSpam };
   }
 }
 
@@ -121,7 +121,7 @@ test('spam es individual, idempotente y distingue registros inexistentes', async
   const mark = new MarkCallAsSpamUseCase(repository);
   const marked = await mark.execute(first.call.id);
   assert.equal(marked.found, true);
-  assert.deepEqual(await mark.execute(first.call.id), marked);
+  assert.deepEqual(await mark.execute(first.call.id), { ...marked, changed: false });
   assert.equal((await repository.findById(second.call.id))?.call.isSpam, false);
   assert.deepEqual(await mark.execute(randomUUID()), { found: false });
   assert.throws(() => mark.execute('not-uuid'));

@@ -10,6 +10,8 @@ import { PrismaService } from '../src/calls/infrastructure/prisma.service';
 import { RegisterCallUseCase } from '../src/calls/application/register-call.use-case';
 import { InvalidCallError } from '../src/calls/application/invalid-call.error';
 import { prepareCall, type RegisterCallInput } from '../src/calls/domain/call';
+import { CALL_EVENTS } from '../src/calls/application/call-events';
+import { MemoryEventBus } from './event-bus.stub';
 
 const payload = { callId: 'webhook-unit', phoneNumber: '+12025550100', agent: 'Agente', duration: 120 };
 let app: INestApplication;
@@ -21,6 +23,7 @@ let received: RegisterCallInput[] = [];
 before(async () => {
   const module = await Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(PrismaService).useValue({})
+    .overrideProvider(CALL_EVENTS).useValue(new MemoryEventBus())
     .overrideProvider(RegisterCallUseCase).useValue({
       execute(input: RegisterCallInput) {
         received.push(input);
