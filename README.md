@@ -1,6 +1,6 @@
 # Callflow
 
-Flujo de llamadas entrantes con NestJS, React y contratos TypeScript compartidos. Incluye dominio y persistencia interna de llamadas mediante Prisma y PostgreSQL. El único endpoint sigue siendo `GET /api/health`, acompañado de una pantalla de conexión. La salud verifica el proceso HTTP; no comprueba PostgreSQL ni Redis. No hay endpoints de llamadas, SSE ni Pub/Sub.
+Flujo de llamadas entrantes con NestJS, React y contratos TypeScript compartidos. Incluye registro idempotente por webhook y persistencia mediante Prisma y PostgreSQL. La pantalla inicial consulta `GET /api/health`, que verifica el proceso HTTP; no comprueba PostgreSQL ni Redis. No hay endpoints de listado o spam, SSE ni Pub/Sub.
 
 ## Requisitos e instalación
 
@@ -83,6 +83,47 @@ corepack pnpm test
 corepack pnpm build
 ```
 
-`apps/api/src/calls` separa dominio, aplicación e infraestructura; sus casos de uso internos se resuelven mediante providers NestJS. No hay controladores de negocio todavía. `libphonenumber-js` normaliza y valida números con prefijo `+` explícito, sin país predeterminado; entradas nacionales ambiguas y extensiones se rechazan. `packages/contracts` no expone modelos Prisma. Swagger se incorporará con los endpoints funcionales en fases posteriores.
+`apps/api/src/calls` separa dominio, aplicación, infraestructura y presentación; sus casos de uso se resuelven mediante providers NestJS. El controlador del webhook reutiliza el registro existente. `libphonenumber-js` normaliza y valida números con prefijo `+` explícito, sin país predeterminado; entradas nacionales ambiguas y extensiones se rechazan. `packages/contracts` expone payload y respuesta del webhook sin DTOs NestJS ni modelos Prisma. Swagger se incorporará en una fase posterior.
+
+## Webhook de llamadas
+
+`POST /api/webhooks/calls` requiere `Content-Type: application/json` y un objeto JSON de hasta 16 KiB, sin compresión. No convierte strings o booleanos a números ni acepta propiedades adicionales, incluidos campos internos como `id`, `createdAt`, `registrationOrder`, `isSpam` o `isRecurrent`.
+
+| Campo | Regla |
+| --- | --- |
+| `callId` | String obligatorio no vacío, máximo 100 caracteres; clave de idempotencia |
+| `phoneNumber` | String obligatorio con número internacional válido y prefijo `+` |
+| `agent` | String obligatorio no vacío, máximo 150 caracteres |
+| `duration` | Número entero entre 0 y 2147483647, en segundos |
+| `recordingUrl` | URL HTTP/HTTPS opcional sin credenciales; omitir si no existe, no enviar `null` |
+
+Ejemplo PowerShell para ejecución local o API publicada por Docker:
+
+```powershell
+$body = @{
+  callId = "call-$([guid]::NewGuid())"
+  phoneNumber = '+573001234567'
+  agent = 'Agente 01'
+  duration = 120
+  recordingUrl = 'https://example.com/recordings/call.mp3'
+} | ConvertTo-Json
+
+Invoke-WebRequest -Uri 'http://localhost:3000/api/webhooks/calls' -Method Post -ContentType 'application/json' -Body $body | Select-Object StatusCode, Content
+Invoke-WebRequest -Uri 'http://localhost:3000/api/webhooks/calls' -Method Post -ContentType 'application/json' -Body $body | Select-Object StatusCode, Content
+```
+
+La primera solicitud devuelve **201** con `{"callId":"…","inserted":true,"isRecurrent":false}`; el reintento devuelve **200** con `inserted:false`. `isRecurrent` será `true` si existe una llamada anterior del mismo número: corresponde al registro original y permanece estable aunque el reintento envíe otro número. Un duplicado válido conserva todos los datos originales, incluso si el payload es diferente. La unicidad y concurrencia siguen garantizadas en PostgreSQL. No se publican eventos.
+
+| Estado | Motivo |
+| --- | --- |
+| `400` | JSON malformado, propiedades adicionales, DTO inválido o invariantes del dominio |
+| `413` | Body superior a 16 KiB |
+| `415` | Content-Type distinto de JSON o codificación no soportada |
+| `500` | Fallo inesperado, sin detalles internos en la respuesta |
+| `503` | Indisponibilidad de persistencia identificada mediante errores Prisma de conexión o timeout |
+
+No se registran payloads completos y las respuestas de error no incluyen SQL, credenciales ni stack traces. La verificación de firma o autenticación del webhook queda pendiente de conocer el contrato del proveedor; esta fase no incorpora un mecanismo ficticio.
+
+`corepack pnpm test` incluye validación HTTP y traducción de errores con dobles de aplicación. `corepack pnpm test:integration` mantiene las pruebas previas y añade E2E HTTP contra PostgreSQL real: respuestas 201/200, payloads distintos, números distintos, concurrencia, recurrencia y ausencia de escritura ante errores. La prueba de indisponibilidad utiliza un cliente Prisma aislado conectado a un puerto que rechaza conexiones de base de datos; no detiene PostgreSQL ni afecta al stack. Los esquemas de pruebas existentes se conservan.
 
 Si Docker no conecta con su motor, inicia Docker Desktop con contenedores Linux. Si un puerto está ocupado, ajusta `.env`. Ante un error de conexión web, verifica `/api/health`; la consulta tiene un límite de cinco segundos. Evita `docker compose down -v` para conservar datos.
